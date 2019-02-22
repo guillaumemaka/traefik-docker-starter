@@ -1,0 +1,54 @@
+# Traefik Docker Starter 
+
+1. Install htpasswd apache utils
+```
+htpasswd -cdB ./users <user> <password>
+```
+
+2. Move .env-dist to .env
+```
+mv .env-dist .env
+```
+
+3. Replace CF_API_EMAIL and CF_API_KEY with your cloudflare credentials
+
+# Build the image
+```
+docker build -t traefik-proxy .
+```
+
+# Build with docker-compose
+```
+docker-compose up -d --build
+```
+
+# Deploy on Swarm
+```
+docker stack deploy -c docker-compose.yml
+```
+
+# Service on Swarm
+```
+# Create a secret
+docker secret create traefik-users ./users
+
+# Create a network
+docker network create --driver overlay web
+
+# Create the service
+docker service create \
+  --name traefik-proxy \ # choose whatever you want
+  --env-file .env \
+  --secret traefik-users \
+  --label traefik.enable="true"
+  --label traefik.frontend.rule=Host:"mgmt.guillaumemaka.com"
+  --label traefik.port="8080"
+  --constraint 'node.role == manager' \
+  --network web
+  --publish published=80,target=80 \
+  --publish published=443,target=443 \
+  --publish published=8080,target=8080 \
+  --replicas 1 \
+  traefik-proxy
+
+```
