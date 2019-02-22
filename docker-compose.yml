@@ -1,0 +1,53 @@
+version: "3.7"
+services:
+  proxy:
+    build: .
+    image: traefik
+    container_name: traefik-proxy
+    env_file: 
+      - .env
+    labels: 
+      - "traefik.enable=true"
+      - "traefik.frontend.rule=Host:mgmt.guillaumemaka.com"
+      - "traefik.port=8080"
+    ports: 
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    networks: 
+      - web
+    deploy:
+      labels: 
+        traefik.enable: "true"
+        traefik.frontend.rule: "Host:mgmt.guillaumemaka.com"
+        traefik.port: "8080"
+      placement:
+        constraints:
+          - node.role == manager
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    restart: on-failure
+    config: 
+      - source: traefik.toml
+        target: /etc/traefik/traefik.toml
+      - source: acme.json
+        target: /etc/traefik/acme.json
+    secrets:
+      - source: traefik-users
+        target: /etc/traefik/users
+        mode: 0600
+
+configs:
+  traefik.toml:
+    file: ./traefik/traefik.toml
+  acme.json:
+    file: ./traefik/acme.json
+
+secrets:
+  traefik-users:
+    file: ./traefik/users
+
+networks:
+  web:
+    external: true
