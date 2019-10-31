@@ -1,0 +1,41 @@
+defaultEntryPoints = ["http", "https"]
+
+[api]
+  entrypoint = "dashboard"
+  dashboard = true
+
+[log]
+  format = "json"
+
+[metrics]
+  [metrics.prometheus]
+    entryPoint = "metrics"
+
+[providers.docker]
+  endpoint = "tcp://docker-api-proxy"
+  swarmMode = true
+  exposedByDefault = false
+
+[entryPoints]
+  [entryPoints.http]
+    address = ":80"
+
+  [entryPoints.https]
+    address = ":443"
+
+  [entryPoints.dashboard]
+    address = ":8080"
+
+  [entryPoints.metrics]
+    address = ":8082"
+
+[certificatesResolvers.traefik.acme]
+email = ""
+entryPoint = "https"
+onHostRule = true
+storage = "acme.json"
+  [certificatesResolvers.traefik.acme.httpChallenge]
+    entryPoint = "http"
+  # [certificatesResolvers.traefik.acme.dnsChallenge]
+  #   provider = "digitalocean"
+  #   delayBeforeCheck = 0
