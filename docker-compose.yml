@@ -1,53 +1,94 @@
 version: "3.7"
+
+x-default-opts: &default-opts
+  logging:
+    options:
+      max-size: "10m"
+  deploy:
+    placement:
+      constraints:
+        - node.role == manager
+    replicas: 1
+    restart_policy:
+      condition: on-failure
+
 services:
+  docker-api-proxy:
+    <<: *default-opts
+    image: 127.0.0.1:5000/tecnativa/docker-socket-proxy
+    networks:
+      - internal
+    privileged: true
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    ports:
+      - 2375
   proxy:
-    build: .
-    image: traefik
-    container_name: traefik-proxy
-    env_file: 
-      - .env
-    labels: 
-      - "traefik.enable=true"
-      - "traefik.frontend.rule=Host:mgmt.guillaumemaka.com"
-      - "traefik.port=8080"
-    ports: 
+    <<: *default-opts
+    image: 127.0.0.1:5000/traefik:v2.0
+    ports:
       - "80:80"
       - "443:443"
       - "8080:8080"
-    networks: 
+      - "8082"
+    networks:
       - web
+      - internal
     deploy:
-      labels: 
-        traefik.enable: "true"
-        traefik.frontend.rule: "Host:mgmt.guillaumemaka.com"
-        traefik.port: "8080"
-      placement:
-        constraints:
-          - node.role == manager
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-    restart: on-failure
-    config: 
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=Host(`traefik.domain.com`)"
+        - "traefik.http.routers.api.service=api@internal"
+        - "traefik.http.routers.api.middlewares=auth"
+        - "traefik.http.middlewares.auth.basicauth.usersFile=/etc/traefik/users"
+    configs:
       - source: traefik.toml
         target: /etc/traefik/traefik.toml
-      - source: acme.json
-        target: /etc/traefik/acme.json
     secrets:
       - source: traefik-users
         target: /etc/traefik/users
         mode: 0600
-
-configs:
-  traefik.toml:
-    file: ./traefik/traefik.toml
-  acme.json:
-    file: ./traefik/acme.json
-
-secrets:
-  traefik-users:
-    file: ./traefik/users
+  prometheus:
+    <<: *default-opts
+    image: 127.0.0.1:5000/prom/prometheus
+    command:
+      - --config.file=/prometheus-data/prometheus-config.yml
+    networks:
+      - internal
+    configs:
+      - source: prometheus-config.yml
+        target: /prometheus-data/prometheus-config.yml
+  grafana:
+    <<: *default-opts
+    image: 127.0.0.1:5000/grafana/grafana:5.2
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    networks:
+      - internal
+    # configs:
+    #   - source: grafana.ini
+    #     target: /etc/grafana/grafana.ini
+    secrets:
+      - grafana_admin_password
 
 networks:
+  internal:
+    driver: overlay
   web:
+    external: true
+
+configs:
+  grafana.ini:
+    external: true
+  prometheus-config.yml:
+    external: true
+  traefik.toml:
+    external: true
+
+secrets:
+  grafana_admin_password:
+    external: true
+  traefik-users:
     external: true

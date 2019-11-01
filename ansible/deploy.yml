@@ -1,0 +1,156 @@
+---
+- hosts: docker-hosts
+  gather_facts: yes
+  remote_user: root
+  vars_prompt:
+    - name: git_clone_dir
+      prompt: "Git clone destination directory ?"
+      private: no
+    - name: grafana_username
+      prompt: "Grafana security username ?"
+      private: no
+    - name: grafana_password
+      prompt: "Grafana security password ?"
+    - name: traefik_dashboard_username
+      prompt: "Traefik dashboard username ?"
+      private: no
+    - name: traefik_dashboard_password
+      prompt: "Traefik dashboard password ?"
+    - name: registry_volume_path
+      prompt: "Private Docker registry volume path ?"
+      private: no
+  tasks:
+    - name: Add EPEL repository
+      yum_repository:
+        name: epel
+        description: EPEL YUM repo
+        baseurl: https://download.fedoraproject.org/pub/epel/$releasever/$basearch/
+    - name: Install dependencies
+      yum:
+        name:
+          - epel
+          - git
+          - python3
+          - python-passlib
+          - docker-ce
+        state: present
+    - name: Init a new swarm with default parameters
+      docker_swarm:
+        state: present
+    - name: Install required ansible modules requirements
+      pip:
+        name:
+          - docker
+          - jsondiff
+          - pyyaml
+    - name: Clone Traefik repo
+      git:
+        repo: https://github.com/guillaumemaka/traefik-docker-starter.git
+        dest: '{{ git_clone_dir }}'
+        version: traefik.v2
+        register: clone_result
+    - name: Generate password
+      htpasswd:
+        path: '{{ clone_result.git_dir_now }}/users'
+        name: '{{ traefik_dashboard_username }}'
+        password: '{{ traefik_dashboard_password }}'
+        owner: root
+        mode: 0640
+    - name: Create traefik-users secret
+      docker_secret:
+        name: traefik-users
+        data: "{{ lookup('file', '{{ clone_result.git_dir_now }}/users') | b64encode }}"
+        data_is_b64: true
+        state: present
+    - name: Create grafana_admin_password secret
+      docker_secret:
+        name: grafana_admin_password
+        data: "{{ grafana_admin_password }}"
+        state: present
+    - name: Create grafana.ini config
+      docker_config:
+        name: grafana.ini
+        data: "{{ lookup('file', '{{ clone_result.git_dir_now }}/grafana.ini') | b64encode }}"
+        data_is_b64: true
+        state: present
+    - name: Create prometheus-config.yml config
+      docker_config:
+        name: prometheus-config.yml
+        data: "{{ lookup('file', '{{ clone_result.git_dir_now }}/prometheus-config.yml') | b64encode }}"
+        data_is_b64: true
+        state: present
+    - name: Create traefik.toml config
+      docker_config:
+        name: traefik.toml
+        data: "{{ lookup('file', '{{ clone_result.git_dir_now }}/traefik.toml') | b64encode }}"
+        data_is_b64: true
+        state: present
+    - name: Create traefik web network
+      docker_network:
+        name: web
+        driver: overlay
+    - name: Create local private docker registry
+      docker_swarm_service:
+        name: docker-registry
+        image: registry:2
+        restart_policy: on-failure
+        replicas: 1
+        placement:
+          constraints:
+            - node.role == manager
+        published:
+          - published_port: 5000
+            target_port: 5000
+        mounts:
+          - source: '{{ registry_volume_path }}'
+            target: /var/lib/registry
+            type: bind
+    - name: Pull tecnativa/docker-socket-proxy docker image
+      docker_image:
+        name: tecnativa/docker-socket-proxy
+        source: pull
+    - name: Pull traefik:v2.0 docker image
+      docker_image:
+        name: traefik:v2.0
+        source: pull
+    - name: Pull prom/prometheus docker image
+      docker_image:
+        name: prom/prometheus
+        source: pull
+    - name: Pull grafana/grafana:5.2 docker image
+      docker_image:
+        name: grafana/grafana:5.2
+        source: pull
+    - name: Tag tecnativa/docker-socket-proxy docker image
+      docker_image:
+        name: tecnativa/docker-socket-proxy
+        repository: 127.0.0.1:5000/tecnativa/docker-socket-proxy
+        source: local
+        push: yes
+    - name: Tag traefik:v2.0 docker image
+      docker_image:
+        name: traefik
+        repository: 127.0.0.1:5000/traefik
+        tag: v2.0
+        push: yes
+        source: local
+    - name: Tag prom/prometheus docker image
+      docker_image:
+        name: prom/prometheus
+        repository: 127.0.0.1:5000/prom/prometheus
+        push: yes
+        source: local
+    - name: Tag grafana/grafana:5.2 docker image
+      docker_image:
+        name: grafana/grafana
+        repository: 127.0.0.1:5000/grafana/grafana
+        tag: 5.2
+        push: yes
+        source: local
+    - name: Deploy stack
+      docker_stack:
+        state: present
+        name: traefik-deployment
+        compose:
+          - '{{ clone_result.git_dir_now }}/docker-compose.yml'
+

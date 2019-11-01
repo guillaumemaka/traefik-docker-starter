@@ -1,4 +1,6 @@
-defaultEntryPoints = ["http", "https"]
+[global]
+  checkNewVersion = true
+  sendAnonymousUsage = true
 
 [api]
   entrypoint = "dashboard"
