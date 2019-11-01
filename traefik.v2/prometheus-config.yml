@@ -1,4 +1,0 @@
-global:
-  scrape_configs:
-    static_configs:
-      - targets: ["proxy:8082"]
