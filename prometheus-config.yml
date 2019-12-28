@@ -1,4 +1,6 @@
-global:
-  scrape_configs:
-    static_configs:
-      - targets: ["proxy:8082"]
+scrape_configs:
+- job_name: traefik
+  scrape_interval: 5s
+  static_configs:
+  - targets:
+    - proxy:8082
